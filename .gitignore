@@ -1,5 +1,6 @@
-# ignore this folder and its contents
-final project - removed/
+# data folders
+data/*
+!data/.gitkeep
 
 # Secrets.json file
 **/secrets.json

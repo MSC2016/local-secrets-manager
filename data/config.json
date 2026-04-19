@@ -1,6 +1,0 @@
-{
-  "timeout_enabled": true,
-  "timeout_minutes": 15,
-  "reset_on_read": true,
-  "lock_on_invalid_api_request": true
-}
