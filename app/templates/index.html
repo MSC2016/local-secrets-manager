@@ -1,0 +1,582 @@
+<!doctype html>
+{% macro render_expanded_inputs(expanded_names, field_name) -%}
+  {% for expanded_name in expanded_names %}
+    <input type="hidden" name="{{ field_name }}" value="{{ expanded_name }}">
+  {% endfor %}
+{%- endmacro %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Secrets Manager</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <div class="shell stack">
+    <details class="panel ops-panel" id="status-panel" {% if top_panel_open %}open{% endif %}>
+      <summary>
+        <div class="ops-summary">
+          <div class="ops-title">
+            <div class="status-pill" id="status-pill" data-state="{% if status.unlocked %}unlocked{% else %}locked{% endif %}">
+              <span id="merged-status">{{ merged_status }}</span>
+            </div>
+            <div>
+              <h1>Local Secrets Manager</h1>
+              <div class="muted">Local secret storage and retrieval for development, testing, and learning.</div>
+            </div>
+          </div>
+
+          <div class="summary-meta">
+            <div>
+              <strong>Last event</strong>
+              <div class="summary-value" id="last-event">{{ status.last_event }}</div>
+            </div>
+            <div class="mini-note {% if status.seconds_remaining is none %}hidden{% endif %}" id="countdown-note">
+              Countdown: <span id="countdown" data-seconds="{{ status.seconds_remaining if status.seconds_remaining is not none else '' }}">{% if status.seconds_remaining is none %}disabled{% else %}{{ status.seconds_remaining }}s{% endif %}</span>
+            </div>
+          </div>
+
+          <div class="summary-actions">
+            <button
+              type="button"
+              id="summary-unlock-button"
+              class="btn btn-ghost btn-mini {% if not (status.locked and status.database_unlockable) %}hidden{% endif %}"
+              {% if not status.database_unlockable %}disabled{% endif %}
+              data-open-panel
+            >Unlock</button>
+            <form method="post" action="/lock" id="summary-lock-form" class="summary-form {% if status.locked %}hidden{% endif %}">
+              <button class="btn btn-danger btn-mini summary-control" type="submit">Lock</button>
+            </form>
+            <span class="summary-toggle" aria-hidden="true"></span>
+          </div>
+        </div>
+      </summary>
+
+      <div class="ops-body">
+        <div class="ops-body-inner">
+          <div id="service-unreachable-warning" class="box box-danger hidden" data-requires-unreachable>
+            The service is currently unreachable. Refresh after the backend is available again.
+          </div>
+
+          <div id="timeout-warning" class="box box-warning {% if status.timeout_enabled %}hidden{% endif %}">
+            Auto-lock is disabled. Secrets will remain available until you lock the service manually.
+          </div>
+
+          <div class="control-grid">
+            <div class="subpanel">
+              <div class="section-header">
+                <h2>Access</h2>
+              </div>
+              <form method="post" action="/unlock" id="unlock-form" class="dense-form {% if not (status.locked and status.database_unlockable) %}hidden{% endif %}" data-requires-locked>
+                <input type="hidden" name="panel" value="expanded">
+                <label>Passphrase
+                  <input id="unlock-passphrase" type="password" name="passphrase" placeholder="Enter passphrase to unlock" {% if not status.database_unlockable %}disabled{% endif %} required>
+                </label>
+                <button class="btn btn-primary" id="unlock-submit-button" type="submit" {% if not status.database_unlockable %}disabled{% endif %}>Unlock Existing Database</button>
+              </form>
+              <div class="box box-muted {% if status.locked %}hidden{% endif %}" data-requires-unlocked>The service is unlocked in memory. API reads will succeed until you lock it or the inactivity timer expires.</div>
+              <form method="post" action="/lock" class="{% if status.locked %}hidden{% endif %}" data-requires-unlocked>
+                <input type="hidden" name="panel" value="expanded">
+                <button class="btn btn-danger" type="submit">Lock Service</button>
+              </form>
+              <div class="box box-muted hidden" data-requires-unreachable>
+                Service status cannot be updated right now because the backend is unavailable.
+              </div>
+            </div>
+
+            <div class="subpanel">
+              <div class="section-header">
+                <h2>Session Controls</h2>
+              </div>
+              <form method="post" action="/settings" class="dense-form">
+                <input type="hidden" name="selected_vault" value="{{ selected_vault }}">
+                <input type="hidden" name="selected_secret" value="{{ selected_secret.name if selected_secret else '' }}">
+                {{ render_expanded_inputs(expanded_secrets, "expanded_secret") }}
+                <input type="hidden" name="selected_field" value="{{ selected_field }}">
+                <input type="hidden" name="selected_target" value="{{ selected_target }}">
+                <input type="hidden" name="panel" value="expanded">
+                <div class="dense-inline">
+                  <label><input type="checkbox" name="timeout_enabled" {% if status.timeout_enabled %}checked{% endif %}> Auto-lock enabled</label>
+                  <div class="mini-field">
+                    <span>Timeout minutes</span>
+                    <input type="number" min="1" name="timeout_minutes" value="{{ status.timeout_minutes }}">
+                  </div>
+                </div>
+                <div class="dense-inline">
+                  <label><input type="checkbox" name="reset_on_read" {% if status.reset_on_read %}checked{% endif %}> Secret reads reset inactivity timer</label>
+                </div>
+                <div class="dense-inline">
+                  <label><input type="checkbox" name="lock_on_invalid_api_request" {% if status.lock_on_invalid_api_request %}checked{% endif %}> Lock on invalid API request</label>
+                </div>
+                <button class="btn" type="submit">Save Settings</button>
+              </form>
+              <div class="session-strip">
+                <span>Timer: <strong id="timer-enabled-stat">{% if status.timeout_enabled %}Enabled{% else %}Disabled{% endif %}</strong></span>
+                <span>Configured timeout: <strong id="timeout-minutes-stat">{{ status.timeout_minutes }} min</strong></span>
+                <span>Remaining: <strong id="countdown-stat">{% if status.seconds_remaining is none %}Disabled{% else %}{{ status.seconds_remaining }}s{% endif %}</strong></span>
+              </div>
+            </div>
+
+            <div class="subpanel">
+              <div class="section-header">
+                <h2>Database Lifecycle</h2>
+              </div>
+              <div class="box box-muted">
+                <strong id="database-state-detail">{{ status.database_state|capitalize }}</strong>
+                <div class="muted" id="database-message">{{ status.database_message }}</div>
+              </div>
+              <div class="action-stack spacer-top-md">
+                {% if status.database_can_initialize %}
+                  <details class="action-disclosure" id="database-action-initialize">
+                    <summary>
+                      <span>Initialize database</span>
+                      <span class="disclosure-toggle" aria-hidden="true"></span>
+                    </summary>
+                    <div class="action-body">
+                      <p class="action-note">Create the initial database passphrase.</p>
+                      <form method="post" action="/database/initialize">
+                        <input type="hidden" name="panel" value="expanded">
+                        <label>Initial passphrase
+                          <input type="password" name="passphrase" placeholder="Create passphrase for new database" required>
+                        </label>
+                        <label>Confirm passphrase
+                          <input type="password" name="confirm_passphrase" placeholder="Repeat passphrase" required>
+                        </label>
+                        <button class="btn btn-primary" type="submit">Initialize Database</button>
+                      </form>
+                    </div>
+                  </details>
+                {% endif %}
+
+                {% if status.database_can_reset %}
+                  <details class="action-disclosure" id="database-action-reset">
+                    <summary>
+                      <span>Reset database</span>
+                      <span class="disclosure-toggle" aria-hidden="true"></span>
+                    </summary>
+                    <div class="action-body">
+                      <div class="box box-danger spacer-bottom-sm">
+                        Reset/Reinitialize replaces the current database file. Existing vaults, secrets, and metadata will be lost.
+                      </div>
+                      <form method="post" action="/database/reset" onsubmit="return confirm('Reset and replace the existing database? All stored data will be lost.');">
+                        <input type="hidden" name="panel" value="expanded">
+                        <label>Type RESET to confirm
+                          <input type="text" name="confirmation" placeholder="RESET" required>
+                        </label>
+                        <label>New passphrase
+                          <input type="password" name="new_passphrase" placeholder="Create passphrase for replacement database" required>
+                        </label>
+                        <label>Confirm passphrase
+                          <input type="password" name="confirm_passphrase" placeholder="Repeat passphrase" required>
+                        </label>
+                        <button class="btn btn-danger" type="submit">Reset And Reinitialize Database</button>
+                      </form>
+                    </div>
+                  </details>
+                {% endif %}
+
+                {% if status.database_ready %}
+                  <details class="action-disclosure" id="database-action-change-passphrase">
+                    <summary>
+                      <span>Change passphrase</span>
+                      <span class="disclosure-toggle" aria-hidden="true"></span>
+                    </summary>
+                    <div class="action-body">
+                      <p class="action-note {% if not status.locked %}hidden{% endif %}" data-requires-locked>Unlock the service before changing the current database passphrase.</p>
+                      <p class="action-note {% if status.locked %}hidden{% endif %}" data-requires-unlocked>Rotate the active passphrase and re-encrypt existing secrets in place.</p>
+                      <form method="post" action="/database/change-passphrase" onsubmit="return confirm('Change the database passphrase now? Existing secrets will be re-encrypted.');" class="{% if status.locked %}hidden{% endif %}" data-requires-unlocked>
+                        <input type="hidden" name="panel" value="expanded">
+                        <label>Current passphrase
+                          <input type="password" name="current_passphrase" placeholder="Current passphrase" required>
+                        </label>
+                        <label>New passphrase
+                          <input type="password" name="new_passphrase" placeholder="New passphrase" required>
+                        </label>
+                        <label>Confirm passphrase
+                          <input type="password" name="confirm_passphrase" placeholder="Repeat passphrase" required>
+                        </label>
+                        <button class="btn" type="submit">Change Passphrase</button>
+                      </form>
+                    </div>
+                  </details>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    {% set can_manage_workspace = not status.locked and status.database_ready %}
+    {% set has_selected_vault = selected_vault|length > 0 %}
+    {% set has_vaults = vaults|length > 0 %}
+    <section class="page-grid workspace-grid">
+      <section class="panel workspace-panel workspace-panel-vaults" data-workspace-panel="vaults">
+        <div class="section-header workspace-panel-header">
+          <h2>Vault Management</h2>
+          <span class="muted {% if status.locked or not status.database_ready %}hidden{% endif %}" id="vault-count" data-requires-unlocked>{{ vaults|length }} total</span>
+        </div>
+        <div class="workspace-panel-body">
+          <div class="box box-muted box-dashed box-centered {% if not status.locked and status.database_ready %}hidden{% endif %}" data-requires-locked>Unlock the service to manage vaults.</div>
+          <div class="box box-danger box-dashed box-centered hidden" data-requires-unreachable>Service unreachable. Vault controls are disabled.</div>
+          <div class="workspace-scroll workspace-scroll-vaults {% if status.locked or not status.database_ready %}hidden{% endif %}" data-requires-unlocked id="vault-workspace-scroll">
+            <div class="vault-actions-toolbar">
+              <a class="btn btn-primary btn-mini btn-compact" href="{{ home_url(secret='', expanded='', field='', target='secret', vault_action='create', create_secret='') }}">Create</a>
+              {% if has_selected_vault %}
+                <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(secret='', expanded='', field='', target='secret', vault_action='rename', create_secret='') }}">Rename</a>
+              {% else %}
+                <button class="btn btn-ghost btn-mini btn-compact" type="button" disabled>Rename</button>
+              {% endif %}
+              <form method="post" action="/vaults/delete" onsubmit="return confirm('Delete the selected vault and all of its secrets?');">
+                <input type="hidden" name="name" value="{{ selected_vault }}">
+                <button class="btn btn-danger btn-mini btn-compact" type="submit" {% if not has_selected_vault %}disabled{% endif %}>Delete</button>
+              </form>
+            </div>
+
+            {% if vault_action == 'create' %}
+              <form method="post" action="/vaults/create" class="item inline-editor-row vault-inline-form" id="create-vault-form">
+                <input type="text" name="name" placeholder="New vault name" aria-label="New vault name" required>
+                <button class="btn btn-primary btn-mini btn-compact" type="submit">Save</button>
+                <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(secret='', expanded='', field='', target='secret', vault_action='', create_secret='') }}">Cancel</a>
+              </form>
+            {% elif vault_action == 'rename' and has_selected_vault %}
+              <form method="post" action="/vaults/rename" class="item inline-editor-row vault-inline-form" id="rename-vault-form">
+                <input type="hidden" name="current_name" value="{{ selected_vault }}">
+                <input type="text" name="new_name" placeholder="Rename selected vault" aria-label="Rename selected vault" required>
+                <button class="btn btn-mini btn-compact" type="submit">Save</button>
+                <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(secret='', expanded='', field='', target='secret', vault_action='', create_secret='') }}">Cancel</a>
+              </form>
+            {% endif %}
+
+            <div class="vault-list" id="vault-list">
+              {% for vault in vaults %}
+                {% set is_selected_vault = vault.name == selected_vault %}
+                <article class="item vault-row{% if is_selected_vault %} selected is-selected{% endif %}" data-vault-name="{{ vault.name }}">
+                  <a class="vault-select" href="{{ home_url(vault=vault.name, secret='', expanded='', field='', target='secret', q='') }}" aria-current="{% if is_selected_vault %}true{% else %}false{% endif %}">
+                    <span class="vault-name">{{ vault.name }}</span>
+                  </a>
+                </article>
+              {% else %}
+                <div class="item workspace-empty-state">
+                  <p class="muted">No vaults yet. Create one to begin.</p>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <main class="workspace-main">
+        <section class="panel workspace-panel workspace-panel-secrets" data-workspace-panel="secrets">
+          <div class="section-header workspace-panel-header">
+            <h2>Secrets{% if selected_vault %} In {{ selected_vault }}{% endif %}</h2>
+            <span class="muted {% if status.locked or not status.database_ready %}hidden{% endif %}" id="secret-count" data-requires-unlocked>{{ secrets|length }} shown</span>
+          </div>
+          <div class="workspace-panel-body">
+            <div class="box box-muted box-dashed box-centered {% if not status.locked and status.database_ready %}hidden{% endif %}" data-requires-locked>Only locked-state and database lifecycle controls are available right now.</div>
+            <div class="box box-danger box-dashed box-centered hidden" data-requires-unreachable>Service unreachable. Secret controls are disabled.</div>
+            <div class="workspace-scroll workspace-scroll-secrets {% if status.locked or not status.database_ready %}hidden{% endif %}" data-requires-unlocked id="secret-workspace-scroll">
+              {% if not has_vaults %}
+                <div class="item workspace-empty-state">
+                  <p class="muted">Create a vault to start storing secrets.</p>
+                </div>
+              {% elif not has_selected_vault %}
+                <div class="item workspace-empty-state">
+                  <p class="muted">Select a vault to view and manage its secrets.</p>
+                </div>
+              {% endif %}
+
+              <div class="item compact-secret-create" id="create-secret-panel">
+                {% if create_secret and has_selected_vault %}
+                  <form method="post" action="/secrets/create" class="inline-editor-row compact-secret-create-form" id="create-secret-form">
+                    <input type="hidden" name="vault" value="{{ selected_vault }}">
+                    <input type="text" name="name" placeholder="Secret name" aria-label="Secret name" required>
+                    <input type="text" name="value" placeholder="Secret value" aria-label="Secret value" required>
+                    <button class="btn btn-primary btn-mini btn-compact" type="submit">Create</button>
+                    <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(create_secret='', editor_secret='', editor_mode='') }}">Cancel</a>
+                  </form>
+                {% else %}
+                  {% if has_selected_vault %}
+                    <a class="btn btn-primary btn-mini" id="create-secret-toggle" href="{{ home_url(create_secret='1', editor_secret='', editor_mode='') }}">Create Secret</a>
+                  {% else %}
+                    <button class="btn btn-primary btn-mini" id="create-secret-toggle" type="button" disabled>Create Secret</button>
+                  {% endif %}
+                {% endif %}
+              </div>
+
+              <div class="list secret-list" id="secret-list">
+                {% for secret in secrets %}
+                  {% set is_selected = selected_secret and selected_secret.name == secret.name %}
+                  {% set is_expanded = secret.name in expanded_secrets %}
+                  {% set active_editor = editor_secret == secret.name and editor_mode %}
+                  <article
+                    class="item secret-row{% if is_selected %} selected is-selected{% endif %}{% if is_expanded %} is-expanded{% endif %}"
+                    data-secret-name="{{ secret.name }}"
+                    data-select-url="{{ toggle_secret_expansion_url(secret.name) }}"
+                  >
+                    <div class="secret-compact-row">
+                      <div class="secret-primary">
+                        <strong class="secret-name-link">{{ secret.name }}</strong>
+                      </div>
+                      <div class="secret-summary">
+                        <span class="secret-value-region" data-secret-value-zone="true" data-prevent-row-toggle="true">
+                          <span class="secret-value-display">
+                            <span class="secret-value" id="secret-value-{{ loop.index }}">••••••••</span>
+                          </span>
+                        </span>
+                        <button type="button" class="btn btn-ghost btn-mini reveal-button" data-target="secret-value-{{ loop.index }}" data-vault="{{ selected_vault }}" data-secret="{{ secret.name }}" {% if status.locked %}disabled{% endif %}>Show</button>
+                      </div>
+                    </div>
+
+                    {% if is_expanded %}
+                      <div class="secret-detail stack compact spacer-top-md">
+                        <div class="secret-action-row">
+                          <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(secret=secret.name, expanded=expanded_secrets, field='', target='secret', create_secret='', editor_secret=secret.name, editor_mode='rename') }}">Edit Name</a>
+                          <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(secret=secret.name, expanded=expanded_secrets, field='', target='secret', create_secret='', editor_secret=secret.name, editor_mode='value') }}">Update Secret Value</a>
+                          <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(secret=secret.name, expanded=expanded_secrets, field='', target='metadata', create_secret='', editor_secret=secret.name, editor_mode='metadata') }}">Add Metadata</a>
+
+                          <form method="post" action="/secrets/delete" onsubmit="return confirm('Delete secret {{ secret.name }}?');">
+                            <input type="hidden" name="vault" value="{{ selected_vault }}">
+                            <input type="hidden" name="name" value="{{ secret.name }}">
+                            {{ render_expanded_inputs(expanded_secrets, "expanded_secret") }}
+                            <button class="btn btn-danger btn-mini btn-compact" type="submit">Delete Secret</button>
+                          </form>
+                        </div>
+
+                        {% if active_editor %}
+                          {% if editor_mode == 'rename' %}
+                            <form method="post" action="/secrets/rename" class="inline-editor-row secret-inline-editor" data-editor-mode="rename">
+                              <input type="hidden" name="vault" value="{{ selected_vault }}">
+                              <input type="hidden" name="current_name" value="{{ secret.name }}">
+                              {{ render_expanded_inputs(expanded_secrets, "expanded_secret") }}
+                              <input type="text" name="new_name" placeholder="Rename secret" aria-label="Rename secret" required>
+                              <button class="btn btn-mini btn-compact" type="submit">Save</button>
+                              <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(secret=secret.name, expanded=expanded_secrets, field='', target='secret', editor_secret='', editor_mode='') }}">Cancel</a>
+                            </form>
+                          {% elif editor_mode == 'value' %}
+                            <form method="post" action="/secrets/update" class="inline-editor-row secret-inline-editor" data-editor-mode="value">
+                              <input type="hidden" name="vault" value="{{ selected_vault }}">
+                              <input type="hidden" name="name" value="{{ secret.name }}">
+                              {{ render_expanded_inputs(expanded_secrets, "expanded_secret") }}
+                              <input type="text" name="value" placeholder="Replace secret value" aria-label="Replace secret value" required>
+                              <button class="btn btn-mini btn-compact" type="submit">Save</button>
+                              <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(secret=secret.name, expanded=expanded_secrets, field='', target='secret', editor_secret='', editor_mode='') }}">Cancel</a>
+                            </form>
+                          {% elif editor_mode == 'metadata' %}
+                            <form method="post" action="/metadata/set" class="inline-editor-row secret-inline-editor secret-inline-editor-wide" data-editor-mode="metadata">
+                              <input type="hidden" name="vault" value="{{ selected_vault }}">
+                              <input type="hidden" name="secret_name" value="{{ secret.name }}">
+                              {{ render_expanded_inputs(expanded_secrets, "expanded_secret") }}
+                              <input type="text" name="key" placeholder="Metadata key" aria-label="Metadata key" value="{{ metadata_overwrite.key if metadata_overwrite and editor_secret == secret.name else '' }}" required>
+                              <input type="text" name="value" placeholder="Metadata value" aria-label="Metadata value" value="{{ metadata_overwrite.new_value if metadata_overwrite and editor_secret == secret.name else '' }}" required>
+                              {% if metadata_overwrite and editor_secret == secret.name %}
+                                <div class="box box-warning inline-editor-warning metadata-overwrite-warning" id="metadata-overwrite-warning">
+                                  <strong>Metadata key "{{ metadata_overwrite.key }}" already exists.</strong>
+                                  <span>Overwrite existing value?</span>
+                                  <span>Old: <code>{{ metadata_overwrite.existing_value }}</code></span>
+                                  <span>New: <code>{{ metadata_overwrite.new_value }}</code></span>
+                                </div>
+                                <input type="hidden" name="confirm_overwrite" value="1">
+                                <button class="btn btn-primary btn-mini btn-compact" type="submit">Overwrite</button>
+                              {% else %}
+                                <button class="btn btn-primary btn-mini btn-compact" type="submit">Save</button>
+                              {% endif %}
+                              <a class="btn btn-ghost btn-mini btn-compact" href="{{ home_url(secret=secret.name, expanded=expanded_secrets, field='', target='metadata', editor_secret='', editor_mode='') }}">Cancel</a>
+                            </form>
+                          {% endif %}
+                        {% endif %}
+
+                        <section
+                          class="stack compact secret-metadata-panel metadata-container{% if selected_target == 'metadata' and is_selected %} selected is-selected{% endif %}"
+                          data-select-url="{{ home_url(secret=secret.name, expanded=secret.name, field='', target='metadata') }}"
+                        >
+                          <div class="section-header">
+                            <h3>Metadata</h3>
+                            <span class="muted">Metadata</span>
+                          </div>
+
+                          <div class="metadata-card-grid">
+                            <article
+                              class="item metadata-card{% if selected_target == 'metadata-field' and selected_field == 'created_at' %} selected is-selected{% endif %}"
+                              data-select-url="{{ home_url(secret=secret.name, expanded=secret.name, field='created_at', target='metadata-field') }}"
+                            >
+                              <div class="meta-item-top">
+                                <strong>Created</strong>
+                              </div>
+                              <div class="meta-item-value muted">{{ secret.created_at }}</div>
+                            </article>
+                            <article
+                              class="item metadata-card{% if selected_target == 'metadata-field' and selected_field == 'updated_at' %} selected is-selected{% endif %}"
+                              data-select-url="{{ home_url(secret=secret.name, expanded=secret.name, field='updated_at', target='metadata-field') }}"
+                            >
+                              <div class="meta-item-top">
+                                <strong>Updated</strong>
+                              </div>
+                              <div class="meta-item-value muted">{{ secret.updated_at }}</div>
+                            </article>
+                            <article
+                              class="item metadata-card{% if selected_target == 'metadata-field' and selected_field == 'last_accessed_at' %} selected is-selected{% endif %}"
+                              data-select-url="{{ home_url(secret=secret.name, expanded=secret.name, field='last_accessed_at', target='metadata-field') }}"
+                            >
+                              <div class="meta-item-top">
+                                <strong>Last accessed</strong>
+                              </div>
+                              <div class="meta-item-value muted">{{ secret.last_accessed_at or "Never" }}</div>
+                            </article>
+
+                            {% for key, value in secret.metadata.items() %}
+                              <article
+                                class="item metadata-card{% if selected_target == 'metadata-field' and selected_field == key %} selected is-selected{% endif %}"
+                                data-select-url="{{ home_url(secret=secret.name, expanded=secret.name, field=key, target='metadata-field') }}"
+                              >
+                                <div class="meta-item-top">
+                                  <strong>{{ key }}</strong>
+                                </div>
+                                <div class="meta-item-value muted">{{ value }}</div>
+                                <div class="meta-item-actions">
+                                  <form method="post" action="/metadata/delete" onsubmit="return confirm('Delete metadata key {{ key }} from {{ secret.name }}?');">
+                                    <input type="hidden" name="vault" value="{{ selected_vault }}">
+                                    <input type="hidden" name="secret_name" value="{{ secret.name }}">
+                                    <input type="hidden" name="key" value="{{ key }}">
+                                    {{ render_expanded_inputs(expanded_secrets, "expanded_secret") }}
+                                    <button class="btn btn-danger btn-mini btn-compact" type="submit">Delete</button>
+                                  </form>
+                                </div>
+                              </article>
+                            {% else %}
+                              <div class="item metadata-card metadata-card-empty">
+                                <div class="meta-item-top">
+                                  <strong>No custom metadata yet</strong>
+                                </div>
+                                <div class="meta-item-value muted">Use Add Metadata to create the first user field.</div>
+                              </div>
+                            {% endfor %}
+                          </div>
+                        </section>
+                      </div>
+                    {% endif %}
+                  </article>
+                {% else %}
+                  {% if has_selected_vault %}
+                    <p class="muted">{% if search_query %}No secrets match the current filter.{% else %}No secrets in this vault yet.{% endif %}</p>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </section>
+
+    <details class="panel retrieval-helper-panel" id="retrieval-helper-panel">
+      <summary class="retrieval-helper-summary">
+        <div class="retrieval-helper-summary-main">
+          <div class="retrieval-helper-title">
+            <h2>Retrieval Helper</h2>
+          </div>
+          <span class="helper-toggle-affordance" data-helper-toggle-affordance aria-hidden="true">
+            <span class="helper-toggle-label helper-toggle-label-collapsed">Click to show more</span>
+            <span class="helper-toggle-label helper-toggle-label-expanded">Click to hide</span>
+          </span>
+        </div>
+        <div class="box box-dashed helper-preview">
+          {% if helper.api_path %}
+            <code id="helper-collapsed-api-path">{{ helper.api_path }}</code>
+          {% else %}
+            <span class="muted helper-empty-preview">Select a vault, secret, or metadata field to generate a helper.</span>
+          {% endif %}
+        </div>
+      </summary>
+
+      <div class="retrieval-helper-body">
+        <div class="box box-dashed stack compact">
+          {% if helper.api_path %}
+            <div class="helper-output-group">
+              <p class="muted helper-output-label">HTTP path</p>
+              <code id="helper-api-path">{{ helper.api_path }}</code>
+            </div>
+            <div class="helper-output-group">
+              <p class="muted helper-output-label">curl example</p>
+              <pre id="helper-curl">{{ helper.curl_snippet }}</pre>
+            </div>
+            <div class="helper-output-group">
+              <p class="muted helper-output-label">Python example</p>
+              <pre id="helper-python">{{ helper.python_snippet }}</pre>
+            </div>
+          {% else %}
+            <p class="muted">Select a vault, secret, or metadata field to generate a helper.</p>
+          {% endif %}
+        </div>
+      </div>
+    </details>
+
+    <details class="panel session-log-panel" id="session-log-panel">
+      <summary class="session-log-summary">
+        <div class="section-header">
+          <h2>Runtime Log</h2>
+          <span class="muted session-log-state-collapsed">Latest 5 events</span>
+          <span class="muted session-log-state-expanded">Full runtime log</span>
+        </div>
+        <div class="session-log-preview">
+          <ul class="log log-preview" id="session-log-preview">
+            {% for event in session_log[:5] %}
+              <li class="log-entry log-level-{{ event.level }}" data-level="{{ event.level }}" data-search="{{ event.search_text }}">
+                <span class="log-entry-line">
+                  <span class="log-level-badge log-level-badge-{{ event.level }}">{{ event.level }}</span>
+                  <span class="log-entry-text">{{ event.rendered_without_level }}</span>
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </summary>
+
+      <div class="session-log-body">
+        <form method="get" action="/" class="session-log-filters">
+          <input type="hidden" name="panel" value="expanded">
+          <input type="hidden" name="vault" value="{{ selected_vault }}">
+          <input type="hidden" name="secret" value="{{ selected_secret.name if selected_secret else '' }}">
+          <input type="hidden" name="field" value="{{ selected_field }}">
+          <input type="hidden" name="q" value="{{ search_query }}">
+          <label class="session-log-search">
+            <span>Search runtime log</span>
+            <input type="search" id="session-log-search" name="log_q" value="{{ log_filter_search }}" placeholder="Filter by text">
+          </label>
+          <div class="session-log-levels">
+            {% for level in ["info", "success", "warning", "error", "security"] %}
+              <label class="session-log-level-option">
+                <input
+                  type="checkbox"
+                  class="session-log-level-filter"
+                  name="log_level"
+                  value="{{ level }}"
+                  {% if level in log_filter_levels %}checked{% endif %}
+                >
+                {{ level|capitalize }}
+              </label>
+            {% endfor %}
+          </div>
+          <div class="session-log-filter-actions">
+            <button class="btn btn-mini" type="submit">Apply Filters</button>
+          </div>
+        </form>
+        <div class="session-log-scroll" id="session-log-scroll">
+          <ul class="log log-full" id="session-log-full">
+            {% for event in filtered_session_log %}
+              <li class="log-entry log-level-{{ event.level }}" data-level="{{ event.level }}" data-search="{{ event.search_text }}">
+                <span class="log-entry-line">
+                  <span class="log-level-badge log-level-badge-{{ event.level }}">{{ event.level }}</span>
+                  <span class="log-entry-text">{{ event.rendered_without_level }}</span>
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+          <div class="muted {% if filtered_session_log %}hidden{% endif %}" id="session-log-empty">No runtime log entries match the current filters.</div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

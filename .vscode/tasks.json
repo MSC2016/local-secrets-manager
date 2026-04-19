@@ -1,0 +1,101 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Coverage: Erase",
+      "type": "process",
+      "command": "${config:python.defaultInterpreterPath}",
+      "args": [
+        "-m",
+        "coverage",
+        "erase"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Coverage: Pytest",
+      "type": "process",
+      "command": "${config:python.defaultInterpreterPath}",
+      "args": [
+        "-m",
+        "coverage",
+        "run",
+        "-m",
+        "pytest"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Coverage: Behave Append",
+      "type": "process",
+      "command": "${config:python.defaultInterpreterPath}",
+      "args": [
+        "-m",
+        "coverage",
+        "run",
+        "-a",
+        "-m",
+        "behave"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Coverage: Report",
+      "type": "process",
+      "command": "${config:python.defaultInterpreterPath}",
+      "args": [
+        "-m",
+        "coverage",
+        "report",
+        "-m"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests: Combined Coverage",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Coverage: Erase",
+        "Coverage: Pytest",
+        "Coverage: Behave Append",
+        "Coverage: Report"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Coverage: HTML",
+      "type": "process",
+      "command": "${config:python.defaultInterpreterPath}",
+      "args": [
+        "-m",
+        "coverage",
+        "html"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests: Combined Coverage + HTML",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Tests: Combined Coverage",
+        "Coverage: HTML"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

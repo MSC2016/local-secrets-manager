@@ -1,0 +1,75 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Local Secrets Manager (Flask Dev, Local Only)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "stopOnEntry": false,
+            "env": {
+                "APP_HOST": "127.0.0.1",
+                "APP_PORT": "5000",
+                "APP_DATA_DIR": "${workspaceFolder}/data"
+            }
+        },
+        {
+            "name": "Run Local Secrets Manager (Flask Dev, Network Testing)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "stopOnEntry": false,
+            "env": {
+                "APP_HOST": "0.0.0.0",
+                "APP_PORT": "5000",
+                "APP_DATA_DIR": "${workspaceFolder}/data"
+            }
+        },
+        {
+            "name": "Run Local Secrets Manager (Gunicorn, Local Only)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "gunicorn.app.wsgiapp",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "stopOnEntry": false,
+            "args": [
+                "--config",
+                "${workspaceFolder}/gunicorn_conf.py",
+                "app.main:create_app()"
+            ],
+            "env": {
+                "APP_HOST": "127.0.0.1",
+                "APP_PORT": "5000",
+                "APP_DATA_DIR": "${workspaceFolder}/data"
+            }
+        },
+        {
+            "name": "Run Local Secrets Manager (Gunicorn, Network Testing)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "gunicorn.app.wsgiapp",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "stopOnEntry": false,
+            "args": [
+                "--config",
+                "${workspaceFolder}/gunicorn_conf.py",
+                "app.main:create_app()"
+            ],
+            "env": {
+                "APP_HOST": "0.0.0.0",
+                "APP_PORT": "5000",
+                "APP_DATA_DIR": "${workspaceFolder}/data"
+            }
+        }
+    ]
+}
