@@ -4,9 +4,13 @@ Local Secrets Manager is a local file-based secrets manager with a Flask web UI 
 
 ## Why I built it
 
-This project began as my **CS50 Introduction to Python final project**. It was not based on a course template — the idea and implementation were my own. I started building it after accidentally exposing an API key on GitHub, which pushed me to create a safer local workflow for storing and retrieving secrets during development.
+This project began as my **CS50 Introduction to Python final project**.
 
-The current version builds on that original backend and turns it into a larger Flask application with a browser UI, retrieval helpers, session controls, runtime logging, and local API endpoints.
+I started building it after accidentally exposing an API key on GitHub, which pushed me to create a safer local workflow for storing and retrieving secrets during development.
+
+The current version expands that original backend into a larger Flask application with a browser UI, session controls, runtime logging, local API endpoints, automated tests, and containerized runtime support.
+
+It was developed as a hands-on learning and portfolio project using a mix of personal implementation, documentation, and AI-assisted development. My focus was on understanding the architecture, trade-offs, and workflow rather than writing every part from scratch.
 
 ## What it does
 

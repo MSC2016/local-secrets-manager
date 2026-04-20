@@ -1,16 +1,30 @@
+"""Local read-only API routes for secrets and metadata.
+
+These endpoints expose status, secret values, and metadata from the currently
+unlocked local vault. They are intentionally scoped for local use and rely on
+the in-process service/session state managed by ``SecretsService``.
+"""
+
 from flask import Blueprint, current_app, has_request_context, jsonify, request
 
 from app.models import LockedError, NotFoundError, StorageError
 
-
+# All API routes are grouped under /api/v1 to keep browser UI and programmatic
+# read endpoints separated.
 api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
 
 def get_service():
+    """Return the shared service instance stored on the Flask app config."""
     return current_app.config["service"]
 
 
 def _request_details() -> dict:
+    """Collect normalized request metadata for audit logging.
+
+    Returns empty strings when called outside a request context so helper
+    functions remain safe to use from tests or non-request code paths.
+    """
     if not has_request_context():
         return {
             "remote_addr": "",
@@ -29,10 +43,16 @@ def _request_details() -> dict:
 
 
 def _log_api(level: str, message: str, status: int):
+    """Write a normal API audit entry for the current request."""
     get_service().audit_api_request(level=level, message=message, status=status, **_request_details())
 
 
 def _handle_invalid_api_request(message: str, status: int):
+    """Handle malformed or invalid API requests through the service layer.
+
+    This centralizes the behavior that may optionally auto-lock the service
+    after invalid API activity, depending on current session settings.
+    """
     get_service().handle_invalid_api_request(message=message, status=status, **_request_details())
 
 
