@@ -6,3 +6,4 @@ pytest-cov==7.1.0
 behave==1.2.6
 coverage==7.13.5
 beautifulsoup4==4.12.3
+zipp>=3.19.1 # not directly required, pinned by Snyk to avoid a vulnerability
